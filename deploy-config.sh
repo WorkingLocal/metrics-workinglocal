@@ -57,6 +57,24 @@ if [[ -n "$SMTP_PASSWORD" ]]; then
         "$SCRIPT_DIR/netdata/health_alarm_notify.conf" | \
         ssh root@"$VPS_IP" "cat > $CONFIG_VOL/health_alarm_notify.conf"
     log "health_alarm_notify.conf gekopieerd (met SMTP wachtwoord)"
+
+    # msmtprc aanmaken voor msmtp (gebruikt door Netdata als sendmail)
+    ssh root@"$VPS_IP" "cat > $CONFIG_VOL/msmtprc << EOF
+defaults
+auth           on
+tls            on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+logfile        /var/log/netdata/msmtp.log
+
+account        default
+host           smtp.hostinger.com
+port           587
+from           info@workinglocal.be
+user           info@workinglocal.be
+password       ${SMTP_PASSWORD}
+EOF
+chmod 600 $CONFIG_VOL/msmtprc"
+    log "msmtprc aangemaakt (persistent in volume)"
 else
     scp "$SCRIPT_DIR/netdata/health_alarm_notify.conf" \
         root@"$VPS_IP":"$CONFIG_VOL/health_alarm_notify.conf"
@@ -67,7 +85,6 @@ fi
 # Netdata herstarten
 echo "→ Netdata herstarten..."
 ssh root@"$VPS_IP" "docker restart $NETDATA" > /dev/null
-sleep 5
 ssh root@"$VPS_IP" "docker inspect $NETDATA --format '{{.State.Status}}'"
 log "Netdata herstart"
 

@@ -18,6 +18,14 @@ services:
       - /sys:/host/sys:ro
       - /etc/os-release:/host/etc/os-release:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    # msmtprc wordt vanuit /etc/netdata (persistent volume) gesymlinkt via entrypoint
+    entrypoint: >
+      sh -c "
+        if [ -f /etc/netdata/msmtprc ]; then
+          cp /etc/netdata/msmtprc /root/.msmtprc &&
+          chmod 600 /root/.msmtprc;
+        fi &&
+        exec /usr/sbin/netdata -D"
     ports:
       - "19999:19999"
 
