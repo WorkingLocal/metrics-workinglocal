@@ -10,14 +10,54 @@ Netdata draait als Docker container op VPS-WORKINGLOCAL, beheerd via Coolify.
 
 ## Wat wordt gemonitord
 
-- CPU gebruik en I/O wait
-- RAM en swap gebruik
-- Schijfruimte en disk I/O utilization
-- Netwerkerrrors en pakket drops
-- Docker container status en geheugen per container
-- Load average, actieve processen, server uptime
+**VPS (parent):**
+- CPU, RAM, disk, netwerk, Docker containers
+
+**Child nodes (streamen naar parent):**
+| Node | Host | Netdata installatie |
+|------|------|---------------------|
+| WINDOWSSERVER2025 | 100.92.201.100 | Netdata MSI (x64) |
+| autoba | 100.107.82.21 | Netdata Linux agent |
+| ai-engine | 100.80.180.55 | Netdata Linux agent |
 
 Zie [alerts.md](alerts.md) voor alle drempelwaarden.
+
+## Child node toevoegen
+
+### 1. Netdata installeren op child
+
+**Linux:**
+```bash
+curl -fsSL https://get.netdata.cloud/kickstart.sh | sudo bash
+```
+
+**Windows Server:**
+Download Netdata MSI van GitHub releases → installeer als service.
+
+### 2. stream.conf configureren op child
+
+Maak `/etc/netdata/stream.conf` aan:
+```ini
+[stream]
+    enabled = yes
+    destination = 100.107.226.24:19999
+    api key = <nieuw-uniek-uuid>
+    timeout seconds = 60
+    buffer size bytes = 1048576
+    reconnect delay seconds = 5
+```
+
+### 3. API key toevoegen op parent (VPS)
+
+```bash
+# In de Netdata Docker container op de VPS:
+# Voeg toe aan /etc/netdata/stream.conf:
+[<nieuw-uuid>]
+    enabled = yes
+    allow from = <tailscale-ip-child>
+```
+
+Dan: `docker restart <netdata-container>`
 
 ## 1. Eerste installatie via Coolify
 

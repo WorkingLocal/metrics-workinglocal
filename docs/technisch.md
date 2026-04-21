@@ -2,22 +2,64 @@
 
 ## Concept
 
-Netdata draait als Docker container op de VPS en monitort alle systeembronnen en Docker containers in real-time. E-mailmeldingen worden verstuurd via Hostinger SMTP wanneer drempelwaarden overschreden worden.
+Netdata werkt als gedistribueerd parent-child streaming systeem. De VPS fungeert als centrale parent node en ontvangt real-time metrics van alle child nodes in het homelab via Tailscale. Alerts en e-mailnotificaties worden verwerkt op de parent.
 
 ## Architectuur
 
 ```
-VPS-WORKINGLOCAL
+metrics.workinglocal.be (Traefik → VPS)
     │
-    ├── netdata container
-    │   ├── System metrics (CPU, RAM, disk, netwerk)
-    │   ├── Docker metrics (alle containers)
-    │   ├── Health alerts (drempelwaarden bewaken)
-    │   └── msmtp (interne SMTP client)
-    │       └── smtp.hostinger.com:587
-    │           └── → thomas@workinglocal.be
-    │
-    └── Traefik → metrics.workinglocal.be
+    └── netdata parent (VPS 100.107.226.24:19999)
+         ├── System & Docker metrics VPS
+         ├── Health alerts + msmtp → thomas@workinglocal.be
+         └── Streaming child nodes (via Tailscale):
+              ├── WINDOWSSERVER2025 (100.92.201.100)
+              │     API key: 596b40bb-e0d2-4c83-81fa-ddf89d416cb9
+              ├── autoba (100.107.82.21)
+              │     API key: 24a2b782-a0be-4b27-82c9-00e7579425c6
+              └── ai-engine (100.80.180.55)
+                    API key: 413beb02-6549-49a4-8bf4-c3a1f1e0e418
+```
+
+## Parent configuratie (VPS /etc/netdata/stream.conf)
+
+```ini
+[stream]
+    enabled = no  # parent ontvangt, verstuurt niet zelf
+
+[596b40bb-e0d2-4c83-81fa-ddf89d416cb9]
+    enabled = yes
+    allow from = 100.92.201.100  # Windows Server 2025
+
+[24a2b782-a0be-4b27-82c9-00e7579425c6]
+    enabled = yes
+    allow from = 100.107.82.21   # VM-AutoBA
+
+[413beb02-6549-49a4-8bf4-c3a1f1e0e418]
+    enabled = yes
+    allow from = 100.80.180.55   # VM-AI-Engine
+```
+
+> Na wijziging van stream.conf: `docker restart <netdata-container>` (SIGHUP volstaat niet).
+
+## Child configuratie (elk child node /etc/netdata/stream.conf)
+
+```ini
+[stream]
+    enabled = yes
+    destination = 100.107.226.24:19999
+    api key = <api-key-van-die-node>
+    timeout seconds = 60
+    buffer size bytes = 1048576
+    reconnect delay seconds = 5
+```
+
+## Firewall (VPS iptables)
+
+Tailscale subnet toegang tot poort 19999 vereist een expliciete DOCKER-USER regel:
+
+```bash
+iptables -I DOCKER-USER 1 -s 100.64.0.0/10 -p tcp --dport 19999 -j RETURN
 ```
 
 ## docker-compose.yml
