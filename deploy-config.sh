@@ -1,8 +1,6 @@
 #!/bin/bash
-# Deploy Netdata configuratie naar VPS
-# Gebruik: bash deploy-config.sh <VPS-IP> [--smtp-password <wachtwoord>]
-#
-# Vereisten: SSH toegang tot de VPS als root
+# Deploy metrics stack configuratie naar VPS
+# Gebruik: bash deploy-config.sh [--smtp-password <wachtwoord>]
 
 set -e
 
@@ -12,81 +10,34 @@ NC='\033[0m'
 log()  { echo -e "${GREEN}✓${NC} $1"; }
 warn() { echo -e "${YELLOW}⚠${NC} $1"; }
 
-VPS_IP="${1:-23.94.220.181}"
-SMTP_PASSWORD="${3}"
+VPS_IP="23.94.220.181"
+DEPLOY_DIR="/data/coolify/services/metrics-stack"
+SMTP_PASSWORD="${2}"
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+echo "=== Metrics stack config deployen naar ${VPS_IP} ==="
 
-echo "=== Netdata config deployen naar ${VPS_IP} ==="
-
-# Netdata container naam ophalen
-NETDATA=$(ssh root@"$VPS_IP" "docker ps --filter name=netdata --format '{{.Names}}' | head -1")
-[[ -z "$NETDATA" ]] && { echo "Netdata container niet gevonden"; exit 1; }
-
-# Config volume path ophalen
-CONFIG_VOL=$(ssh root@"$VPS_IP" "docker inspect $NETDATA | python3 -c \"
-import json,sys
-d=json.load(sys.stdin)[0]
-for m in d['Mounts']:
-    if '/etc/netdata' in m.get('Destination',''):
-        print(m.get('Source',''))
-        break
-\"")
-[[ -z "$CONFIG_VOL" ]] && { echo "Netdata config volume niet gevonden"; exit 1; }
-
-log "Netdata container: $NETDATA"
-log "Config volume: $CONFIG_VOL"
-
-# Bestanden kopiëren
-echo "→ netdata.conf kopiëren..."
-scp "$SCRIPT_DIR/netdata/netdata.conf" root@"$VPS_IP":"$CONFIG_VOL/netdata.conf"
-log "netdata.conf gekopieerd"
-
-# Health alerts kopiëren
-echo "→ Health alerts kopiëren..."
-ssh root@"$VPS_IP" "mkdir -p $CONFIG_VOL/health.d"
-for conf in "$SCRIPT_DIR/netdata/health.d/"*.conf; do
-    scp "$conf" root@"$VPS_IP":"$CONFIG_VOL/health.d/$(basename $conf)"
-    log "  health.d/$(basename $conf)"
+# Prometheus en alerting config
+for f in prometheus.yml alert.rules.yml alertmanager.yml; do
+    scp "$f" root@"$VPS_IP":"${DEPLOY_DIR}/${f}"
+    log "$f gekopieerd"
 done
 
-# Notificaties kopiëren en SMTP wachtwoord invullen
-echo "→ Notificatieconfig kopiëren..."
+# Grafana provisioning
+scp grafana/provisioning/datasources/prometheus.yml root@"$VPS_IP":"${DEPLOY_DIR}/grafana/provisioning/datasources/prometheus.yml"
+scp grafana/provisioning/dashboards/dashboards.yml root@"$VPS_IP":"${DEPLOY_DIR}/grafana/provisioning/dashboards/dashboards.yml"
+log "Grafana provisioning gekopieerd"
+
+# SMTP wachtwoord instellen
 if [[ -n "$SMTP_PASSWORD" ]]; then
-    sed "s/VERVANG_MET_APP_WACHTWOORD/${SMTP_PASSWORD}/" \
-        "$SCRIPT_DIR/netdata/health_alarm_notify.conf" | \
-        ssh root@"$VPS_IP" "cat > $CONFIG_VOL/health_alarm_notify.conf"
-    log "health_alarm_notify.conf gekopieerd (met SMTP wachtwoord)"
-
-    # msmtprc aanmaken voor msmtp (gebruikt door Netdata als sendmail)
-    ssh root@"$VPS_IP" "cat > $CONFIG_VOL/msmtprc << EOF
-defaults
-auth           on
-tls            on
-tls_trust_file /etc/ssl/certs/ca-certificates.crt
-logfile        /var/log/netdata/msmtp.log
-
-account        default
-host           smtp.hostinger.com
-port           587
-from           info@workinglocal.be
-user           info@workinglocal.be
-password       ${SMTP_PASSWORD}
-EOF
-chmod 600 $CONFIG_VOL/msmtprc"
-    log "msmtprc aangemaakt (persistent in volume)"
+    ssh root@"$VPS_IP" "sed -i 's/VERVANG_MET_SMTP_WACHTWOORD/${SMTP_PASSWORD}/g' ${DEPLOY_DIR}/alertmanager.yml"
+    ssh root@"$VPS_IP" "sed -i 's/SMTP_PASSWORD=.*/SMTP_PASSWORD=${SMTP_PASSWORD}/' ${DEPLOY_DIR}/.env"
+    log "SMTP wachtwoord ingesteld"
+    # Alertmanager herstarten om nieuw wachtwoord te laden
+    ssh root@"$VPS_IP" "cd ${DEPLOY_DIR} && docker compose restart alertmanager grafana"
+    log "Alertmanager en Grafana herstart"
 else
-    scp "$SCRIPT_DIR/netdata/health_alarm_notify.conf" \
-        root@"$VPS_IP":"$CONFIG_VOL/health_alarm_notify.conf"
-    warn "health_alarm_notify.conf gekopieerd ZONDER SMTP wachtwoord"
-    warn "Stel het in via: bash deploy-config.sh $VPS_IP --smtp-password <wachtwoord>"
+    warn "Geen SMTP wachtwoord opgegeven"
+    warn "Stel in via: bash deploy-config.sh --smtp-password <wachtwoord>"
 fi
 
-# Netdata herstarten
-echo "→ Netdata herstarten..."
-ssh root@"$VPS_IP" "docker restart $NETDATA" > /dev/null
-ssh root@"$VPS_IP" "docker inspect $NETDATA --format '{{.State.Status}}'"
-log "Netdata herstart"
-
-echo ""
-log "Configuratie gedeployd. Controleer alerts via https://metrics.workinglocal.be"
+log "Config deploy klaar."

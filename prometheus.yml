@@ -1,0 +1,70 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: hostinglocal
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['localhost:9093']
+
+rule_files:
+  - /etc/prometheus/alert.rules.yml
+
+scrape_configs:
+
+  # Prometheus zelf
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # VPS-WORKINGLOCAL (node_exporter op VPS host)
+  - job_name: 'vps-workinglocal'
+    static_configs:
+      - targets: ['localhost:9100']
+        labels:
+          instance: 'VPS-WORKINGLOCAL'
+
+  # Windows Server 2025 (Hyper-V host)
+  # Vereist: windows_exporter op 100.92.201.100:9182
+  - job_name: 'windows-server'
+    static_configs:
+      - targets: ['100.92.201.100:9182']
+        labels:
+          instance: 'WINDOWSSERVER2025'
+
+  # VM-AutoBA
+  # Vereist: node_exporter op 100.107.82.21:9100
+  - job_name: 'vm-autoba'
+    static_configs:
+      - targets: ['100.107.82.21:9100']
+        labels:
+          instance: 'VM-AUTOBA'
+
+  # VM-AI-Engine
+  # Vereist: node_exporter op 100.80.180.55:9100
+  - job_name: 'vm-ai-engine'
+    static_configs:
+      - targets: ['100.80.180.55:9100']
+        labels:
+          instance: 'VM-AI-ENGINE'
+
+  # NUT-SERVER (Raspberry Pi 3B)
+  # Vereist: node_exporter op 100.97.195.23:9100
+  - job_name: 'nut-server'
+    static_configs:
+      - targets: ['100.97.195.23:9100']
+        labels:
+          instance: 'NUT-SERVER'
+
+  # HAOS Intel NUC — via Netdata Prometheus export
+  - job_name: 'haos-nuc'
+    metrics_path: /api/v1/allmetrics
+    params:
+      format: [prometheus]
+      help: ['yes']
+    static_configs:
+      - targets: ['100.109.230.93:19999']
+        labels:
+          instance: 'HAOS-NUC'
