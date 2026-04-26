@@ -1,98 +1,134 @@
 # Metrics — Working Local
 
-Netdata monitoring voor VPS-WORKINGLOCAL.
+Monitoring stack voor het volledige Hosting Local homelab.
 
 ## Wat het doet
 
-- **Systeemmonitoring** — CPU, RAM, disk, netwerk, load average, processen
-- **Container metrics** — alle Docker containers op de VPS (status + geheugen)
-- **Health alerts** — e-mailmeldingen bij overschrijden van drempelwaarden
-- **Live dashboard** via `metrics.workinglocal.be`
+- **Systeemmonitoring** — CPU, RAM, disk, netwerk via Prometheus + Node Exporter
+- **Live dashboards** — Grafana met Node Exporter Full en Windows Exporter dashboards
+- **Alerting** — Alertmanager stuurt e-mailmeldingen bij drempeloverschrijdingen
+- **Uptime monitoring** — Uptime Kuma bewaakt alle webapplicaties en services
 
-## Repositories structuur
+## URLs
+
+| Service | URL |
+|---------|-----|
+| Grafana dashboards | https://metrics.workinglocal.be |
+| Uptime Kuma status | https://uptime.workinglocal.be |
+| Prometheus (intern) | http://VPS:9090 |
+
+## Stack
+
+| Onderdeel | Technologie | Poort |
+|-----------|-------------|-------|
+| Metrics scraping | Prometheus | 9090 (host) |
+| Dashboards | Grafana | 3000 (via Traefik) |
+| Alerting | Alertmanager | 9093 |
+| Uptime monitoring | Uptime Kuma | 3001 (via Traefik) |
+
+## Gemonitorde nodes
+
+| Node | Methode | Status |
+|------|---------|--------|
+| VPS-WORKINGLOCAL | node_exporter (host) | actief |
+| Windows Server 2025 | windows_exporter :9182 | actief |
+| VM-AutoBA | node_exporter Docker :9100 | actief |
+| HAOS-NUC | Netdata Prometheus export :19999 | actief |
+| NUT-SERVER Pi | node_exporter :9100 | nog te installeren |
+| VM-AI-Engine | node_exporter :9100 | nog te installeren |
+
+## Repository structuur
 
 ```
 metrics-workinglocal/
-├── docker-compose.yml          # Netdata container definitie
-├── deploy-config.sh            # Script om config naar VPS te deployen
-├── netdata/
-│   ├── netdata.conf            # Hoofdconfiguratie (hostname, retentie)
-│   ├── health_alarm_notify.conf # E-mailnotificaties via Hostinger SMTP
-│   └── health.d/               # Health alert definities
-│       ├── cpu.conf
-│       ├── memory.conf
-│       ├── disk.conf
-│       ├── network.conf
-│       ├── docker.conf
-│       └── system.conf
+├── docker-compose.yml              # Grafana + Prometheus + Alertmanager + Uptime Kuma
+├── prometheus.yml                  # Scrape targets (alle Tailscale nodes)
+├── alert.rules.yml                 # Alerting regels (CPU, RAM, disk, uptime)
+├── alertmanager.yml                # E-mail notificaties via Hostinger SMTP
+├── deploy.sh                       # Volledige deploy naar VPS
+├── deploy-config.sh                # Alleen config bijwerken (zonder redeploy)
+├── install-node-exporter.sh        # Installatiescript voor Linux nodes
+├── grafana/
+│   └── provisioning/
+│       ├── datasources/
+│       │   └── prometheus.yml      # Prometheus datasource
+│       └── dashboards/
+│           └── dashboards.yml      # Dashboard provider config
 └── docs/
-    ├── setup.md                # Volledige deployment handleiding
-    └── alerts.md               # Overzicht van alle geconfigureerde alerts
+    ├── setup.md
+    ├── alerts.md
+    ├── howto.md
+    └── technisch.md
 ```
 
 ## Deployment
 
-Draait op `metrics.workinglocal.be` via Coolify op VPS-WORKINGLOCAL.
-
-### Eerste installatie
-
-1. In Coolify: **New Resource → Docker Compose**
-2. Plak de inhoud van `docker-compose.yml`
-3. Domein instellen: `metrics.workinglocal.be` → poort `19999`
-4. Deploy
-
-### Configuratie deployen
-
-Na de eerste installatie, deploy de config inclusief alerts en SMTP:
+### Eerste installatie op VPS
 
 ```bash
-# Zonder SMTP wachtwoord
-bash deploy-config.sh
+# Volledige deploy (kopieert alle bestanden naar VPS)
+bash deploy.sh --smtp-password <wachtwoord>
 
-# Met SMTP wachtwoord (persistente opslag in Docker volume)
-bash deploy-config.sh 23.94.220.181 --smtp-password <app-wachtwoord>
+# Op VPS: stack starten
+cd /data/coolify/services/metrics-stack
+docker compose up -d
 ```
 
-Het script kopieert alle config naar het Netdata config volume en herstart de container.
+### Config bijwerken
+
+```bash
+bash deploy-config.sh --smtp-password <wachtwoord>
+```
+
+### node_exporter installeren op Linux node
+
+```bash
+# SSH naar de node en uitvoeren als root:
+curl -sL https://raw.githubusercontent.com/WorkingLocal/metrics-workinglocal/main/install-node-exporter.sh | bash
+```
+
+### windows_exporter op Windows Server
+
+Download en installeer de MSI van [windows_exporter releases](https://github.com/prometheus-community/windows_exporter/releases).
+Default poort: 9182.
+
+## Grafana credentials
+
+- URL: https://metrics.workinglocal.be
+- Gebruiker: `admin`
+- Wachtwoord: zie `.env` op VPS (`/data/coolify/services/metrics-stack/.env`)
+
+## Uptime Kuma credentials
+
+- URL: https://uptime.workinglocal.be
+- Gebruiker: `admin`
+- Wachtwoord: zie Grafana ADMIN_PASSWORD (zelfde wachtwoord)
 
 ## Alerts
 
-Alerts worden verstuurd via e-mail (`info@workinglocal.be` → `thomas@workinglocal.be`) via Hostinger SMTP.
+Alerts worden verstuurd via e-mail (`info@workinglocal.be` → `thomas@workinglocal.be`).
 
-Zie [docs/alerts.md](docs/alerts.md) voor een overzicht van alle geconfigureerde alerts.
+| Alert | Drempel | Ernst |
+|-------|---------|-------|
+| InstanceDown | 2 minuten offline | critical |
+| HighCpuUsage | >85% gedurende 5 min | warning |
+| HighMemoryUsage | >85% gedurende 5 min | warning |
+| LowDiskSpace | <10% vrij gedurende 5 min | warning |
+| CriticalDiskSpace | <5% vrij gedurende 1 min | critical |
 
-## Vereisten
+## DNS
 
-- Coolify op de VPS (zie [vps-workinglocal](https://github.com/WorkingLocal/vps-workinglocal))
-- DNS A-record: `metrics.workinglocal.be` → `23.94.220.181` (Cloudflare proxy UIT)
-- SSH toegang als root voor `deploy-config.sh`
+| Record | Type | Waarde |
+|--------|------|--------|
+| metrics.workinglocal.be | A | 23.94.220.181 |
+| uptime.workinglocal.be | A | 23.94.220.181 |
 
-## Beveiliging
-
-Netdata is standaard open. Beveilig via Coolify:
-
-- **Basic auth** — instellen in de Coolify domeininstellingen
-- **IP-restrictie** — via Caddy configuratie
-- **Netdata Cloud** — koppelen met claim token (zie `.env.template`)
-
-## Stack
-
-| Onderdeel | Technologie |
-|---|---|
-| Monitoring | Netdata (laatste stabiele versie) |
-| E-mail | msmtp + Hostinger SMTP |
-| Reverse proxy | Caddy (via Coolify) |
-
-## Documentatie
-
-- [docs/setup.md](docs/setup.md) — volledige deployment handleiding
-- [docs/alerts.md](docs/alerts.md) — overzicht van alle health alerts
+**Opmerking:** `uptime.workinglocal.be` moet nog worden aangemaakt in Cloudflare DNS.
 
 ## Gerelateerde repositories
 
 | Repo | Inhoud |
-|---|---|
+|------|--------|
 | [vps-workinglocal](https://github.com/WorkingLocal/vps-workinglocal) | Server setup & infrastructuur |
 | [odoo-workinglocal](https://github.com/WorkingLocal/odoo-workinglocal) | Odoo CE + coworking addon |
-| [signage-workinglocal](https://github.com/WorkingLocal/signage-workinglocal) | Xibo CMS voor digitale schermen |
-| [focus-workinglocal](https://github.com/WorkingLocal/focus-workinglocal) | Focus Kiosk app |
+| [netdata-haos-addon](https://github.com/WorkingLocal/netdata-haos-addon) | Netdata HAOS add-on (Prometheus export voor HAOS-NUC) |

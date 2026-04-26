@@ -1,160 +1,116 @@
-# Netdata Monitoring — Working Local
+# Setup handleiding — Metrics Stack
 
-## Overzicht
+## Stack overzicht
 
-Netdata draait als Docker container op VPS-WORKINGLOCAL, beheerd via Coolify.
+| Container | Rol | Netwerk |
+|-----------|-----|---------|
+| `prometheus-metrics` | Metrics scrapen van alle nodes | `host` (voor Tailscale toegang) |
+| `grafana-metrics` | Dashboards | `monitoring` + Traefik netwerk |
+| `alertmanager-metrics` | E-mail alerts | `monitoring` |
+| `uptime-kuma-metrics` | URL/port uptime | `monitoring` + Traefik netwerk |
 
-- **URL:** `metrics.workinglocal.be`
-- **Interne poort:** `19999`
-- **DNS:** A-record direct naar VPS (geen Cloudflare proxy)
+## VPS locatie
 
-## Wat wordt gemonitord
-
-**VPS (parent):**
-- CPU, RAM, disk, netwerk, Docker containers
-
-**Child nodes (streamen naar parent):**
-| Node | Host | Netdata installatie |
-|------|------|---------------------|
-| WINDOWSSERVER2025 | 100.92.201.100 | Netdata MSI (x64) |
-| autoba | 100.107.82.21 | Netdata Linux agent |
-| ai-engine | 100.80.180.55 | Netdata Linux agent |
-
-Zie [alerts.md](alerts.md) voor alle drempelwaarden.
-
-## Child node toevoegen
-
-### 1. Netdata installeren op child
-
-**Linux:**
-```bash
-curl -fsSL https://get.netdata.cloud/kickstart.sh | sudo bash
+```
+/data/coolify/services/metrics-stack/
+├── docker-compose.yml
+├── prometheus.yml
+├── alert.rules.yml
+├── alertmanager.yml
+├── .env                    # GRAFANA_ADMIN_PASSWORD + SMTP_PASSWORD
+└── grafana/
+    └── provisioning/
+        ├── datasources/prometheus.yml
+        └── dashboards/dashboards.yml
 ```
 
-**Windows Server:**
-Download Netdata MSI van GitHub releases → installeer als service.
+## Credentials
 
-### 2. stream.conf configureren op child
+| Service | Gebruiker | Wachtwoord |
+|---------|-----------|-----------|
+| Grafana | admin | zie `.env` op VPS |
+| Uptime Kuma | admin | zelfde als Grafana |
+| Prometheus | — | geen auth (intern) |
+| Alertmanager | — | geen auth (intern) |
 
-Maak `/etc/netdata/stream.conf` aan:
-```ini
-[stream]
-    enabled = yes
-    destination = 100.107.226.24:19999
-    api key = <nieuw-uniek-uuid>
-    timeout seconds = 60
-    buffer size bytes = 1048576
-    reconnect delay seconds = 5
-```
+## Eerste installatie
 
-### 3. API key toevoegen op parent (VPS)
+### 1. Bestanden deployen
 
 ```bash
-# In de Netdata Docker container op de VPS:
-# Voeg toe aan /etc/netdata/stream.conf:
-[<nieuw-uuid>]
-    enabled = yes
-    allow from = <tailscale-ip-child>
+# Vanuit de metrics-workinglocal repo:
+bash deploy.sh --smtp-password <hostinger-wachtwoord>
 ```
 
-Dan: `docker restart <netdata-container>`
-
-## 1. Eerste installatie via Coolify
-
-1. In Coolify: **New Resource → Docker Compose**
-2. Plak de inhoud van `docker-compose.yml` uit deze repo
-3. Stel het domein in: `metrics.workinglocal.be` → poort `19999`
-4. Deploy
-
-Coolify regelt automatisch SSL via Caddy.
-
-## 2. DNS instellen (Cloudflare)
-
-```
-Type:  A
-Name:  metrics
-Value: 23.94.220.181
-TTL:   Auto
-Proxy: DNS only (grijs wolkje — GEEN oranje wolk)
-```
-
-> Cloudflare proxy moet UIT staan: Netdata gebruikt WebSockets voor live updates.
-
-## 3. Configuratie deployen
-
-Na de eerste Coolify-deployment, deploy de config met het deploy-script.
-Het script vereist SSH toegang als root naar de VPS.
+### 2. .env aanmaken op VPS
 
 ```bash
-# Zonder SMTP wachtwoord (alerts geconfigureerd maar geen e-mails)
-bash deploy-config.sh
-
-# Met SMTP wachtwoord — e-mailnotificaties worden ingeschakeld
-bash deploy-config.sh 23.94.220.181 --smtp-password <app-wachtwoord>
+ssh root@23.94.220.181
+cat > /data/coolify/services/metrics-stack/.env << EOF
+GRAFANA_ADMIN_PASSWORD=<sterk-wachtwoord>
+SMTP_PASSWORD=<hostinger-smtp-wachtwoord>
+EOF
 ```
 
-Het script:
-1. Zoekt de Netdata container en het config volume op de VPS
-2. Kopieert `netdata/netdata.conf` naar het volume
-3. Kopieert alle `netdata/health.d/*.conf` alerts
-4. Kopieert `netdata/health_alarm_notify.conf` (met SMTP wachtwoord ingevuld)
-5. Maakt `msmtprc` aan in het persistente config volume
-6. Herstart de Netdata container
-
-## 4. E-mailnotificaties (Hostinger SMTP)
-
-Netdata gebruikt intern `msmtp` als sendmail-vervanging. De SMTP-configuratie:
-
-| Instelling | Waarde |
-|---|---|
-| SMTP server | `smtp.hostinger.com` |
-| Poort | `587` (STARTTLS) |
-| Afzender | `info@workinglocal.be` |
-| Ontvanger | `thomas@workinglocal.be` |
-
-**Hoe het werkt:**
-- `msmtprc` wordt opgeslagen in het persistente Netdata config volume (`/etc/netdata/msmtprc`)
-- Bij elke container start kopieert de entrypoint het naar `/root/.msmtprc`
-- Zo blijft de SMTP-config bewaard na container restarts en updates
-
-**Wachtwoord wijzigen:**
-```bash
-bash deploy-config.sh 23.94.220.181 --smtp-password <nieuw-wachtwoord>
-```
-
-Het SMTP-wachtwoord staat **nooit** in de Git repo. `health_alarm_notify.conf` bevat de placeholder `VERVANG_MET_APP_WACHTWOORD`.
-
-## 5. Alerts testen
-
-Test of e-mailnotificaties werken door vanuit de Netdata container een test te sturen:
+### 3. Stack starten
 
 ```bash
-# In de Netdata container
-docker exec -it <netdata-container> bash
-/usr/libexec/netdata/plugins.d/alarm-notify.sh test
+cd /data/coolify/services/metrics-stack
+docker compose up -d
 ```
 
-Of controleer de Netdata logs:
+### 4. node_exporter op VPS installeren
+
 ```bash
-docker logs <netdata-container> 2>&1 | grep -i "alarm\|smtp\|msmtp"
+# Als root op VPS:
+curl -sL https://raw.githubusercontent.com/WorkingLocal/metrics-workinglocal/main/install-node-exporter.sh | bash
 ```
 
-## 6. Config aanpassen
+### 5. Grafana dashboards importeren
 
-Alle configuratie staat in de `netdata/` map van deze repo. Workflow:
+Geïmporteerde dashboards (via API):
+- **Node Exporter Full** (ID 1860) — Linux node metrics
+- **Windows Exporter Dashboard** (ID 14694) — Windows Server metrics
 
-1. Pas de `.conf` bestanden aan lokaal
-2. Commit en push naar GitHub
-3. Run `bash deploy-config.sh` om naar de VPS te deployen
+Via Grafana UI: Dashboards → Import → ID invoeren.
 
-## Beveiliging
+## node_exporter op Linux nodes installeren
 
-Netdata is standaard open. Beveilig via Coolify:
-- **Optie 1:** Basic auth instellen in Coolify domein instellingen
-- **Optie 2:** IP-restrictie via Caddy
-- **Optie 3:** Netdata Cloud koppelen met claim token (zie `.env.template`)
+```bash
+# SSH naar de node en uitvoeren als root:
+curl -sL https://raw.githubusercontent.com/WorkingLocal/metrics-workinglocal/main/install-node-exporter.sh | bash
+```
 
-## Temperatuurmeting
+Getest op: Ubuntu, Debian, Raspberry Pi OS (auto-detectie van arch: amd64/arm64/armv7).
 
-Op een KVM VPS zijn hardware temperatuursensoren **niet beschikbaar** — de hypervisor verbergt deze.
-Temperatuurmonitoring is enkel mogelijk op bare metal servers met IPMI toegang.
+## windows_exporter op Windows Server
+
+1. Download MSI van https://github.com/prometheus-community/windows_exporter/releases
+2. Installeer: `msiexec /i windows_exporter-*.msi /quiet ENABLED_COLLECTORS=cpu,cs,logical_disk,net,os,service,system,memory`
+3. Default luistert op poort 9182
+
+## Prometheus targets verifiëren
+
+```bash
+ssh root@23.94.220.181
+curl -s http://localhost:9090/api/v1/targets | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for t in d['data']['activeTargets']:
+    print(t['health'], t['labels']['job'], t['labels']['instance'])
+"
+```
+
+## DNS vereisten
+
+| Record | Waarde |
+|--------|--------|
+| metrics.workinglocal.be | A → 23.94.220.181 |
+| uptime.workinglocal.be | A → 23.94.220.181 (nog aan te maken in Cloudflare) |
+
+## Bekende beperkingen
+
+| Node | Status | Reden |
+|------|--------|-------|
+| NUT-SERVER Pi (100.97.195.23) | Prometheus: down | Geen SSH-toegang voor installatie node_exporter |
+| VM-AI-Engine (100.80.180.55) | Prometheus: down | Ubuntu nog niet geïnstalleerd op VM |
