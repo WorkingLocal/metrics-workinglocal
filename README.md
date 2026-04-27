@@ -5,7 +5,7 @@ Monitoring stack voor het volledige Hosting Local homelab.
 ## Wat het doet
 
 - **Systeemmonitoring** — CPU, RAM, disk, netwerk via Prometheus + Node Exporter
-- **Live dashboards** — Grafana met Node Exporter Full en Windows Exporter dashboards
+- **Live dashboards** — Grafana met Node Exporter Full, Windows Exporter en AI Nodes Load Monitor dashboards
 - **Alerting** — Alertmanager stuurt e-mailmeldingen bij drempeloverschrijdingen
 - **Uptime monitoring** — Uptime Kuma bewaakt alle webapplicaties en services
 
@@ -106,6 +106,14 @@ Default poort: 9182.
 - Gebruiker: `admin`
 - Wachtwoord: zie `.env` op VPS (`/data/coolify/services/metrics-stack/.env`)
 
+## Grafana dashboards
+
+| Dashboard | UID | URL |
+|-----------|-----|-----|
+| Node Exporter Full | (Grafana ID 1860) | https://metrics.workinglocal.be |
+| Windows Exporter | (Grafana ID 14694) | https://metrics.workinglocal.be |
+| AI Nodes Load Monitor | 2ca2c5e5-ca9a-49e7-8010-017d804f4678 | https://metrics.workinglocal.be/d/2ca2c5e5-ca9a-49e7-8010-017d804f4678/ai-nodes-efbfbd-load-monitor |
+
 ## Uptime Kuma credentials
 
 - URL: https://uptime.workinglocal.be
@@ -119,10 +127,10 @@ Alerts worden verstuurd via e-mail (`info@workinglocal.be` → `thomas@workinglo
 | Alert | Drempel | Ernst |
 |-------|---------|-------|
 | InstanceDown | 2 minuten offline | critical |
-| HighCpuUsage | >85% gedurende 5 min | warning |
-| HighMemoryUsage | >85% gedurende 5 min | warning |
-| LowDiskSpace | <10% vrij gedurende 5 min | warning |
-| CriticalDiskSpace | <5% vrij gedurende 1 min | critical |
+| HighCpuUsage | >80% gedurende 5 min | warning |
+| HighMemoryUsage | >80% gedurende 5 min | warning |
+| NvmeDiskUsageHigh | /dev/nvme* >80% gedurende 5 min | warning |
+| NvmeDiskUsageCritical | /dev/nvme* >90% gedurende 1 min | critical |
 
 ## DNS
 
@@ -131,7 +139,6 @@ Alerts worden verstuurd via e-mail (`info@workinglocal.be` → `thomas@workinglo
 | metrics.workinglocal.be | A | 23.94.220.181 |
 | uptime.workinglocal.be | A | 23.94.220.181 |
 
-**Opmerking:** `uptime.workinglocal.be` moet nog worden aangemaakt in Cloudflare DNS.
 
 ## Gerelateerde repositories
 
