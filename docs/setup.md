@@ -105,12 +105,23 @@ for t in d['data']['activeTargets']:
 
 | Record | Waarde |
 |--------|--------|
-| metrics.workinglocal.be | A → 23.94.220.181 |
-| uptime.workinglocal.be | A → 23.94.220.181 (nog aan te maken in Cloudflare) |
+| metrics.workinglocal.be | A → 23.94.220.181 (actief) |
+| uptime.workinglocal.be | A → 23.94.220.181 (actief, proxy uit) |
 
-## Bekende beperkingen
+## Uptime Kuma monitor namen
 
-| Node | Status | Reden |
-|------|--------|-------|
-| NUT-SERVER Pi (100.97.195.23) | Prometheus: down | Geen SSH-toegang voor installatie node_exporter |
-| VM-AI-Engine (100.80.180.55) | Prometheus: down | Ubuntu nog niet geïnstalleerd op VM |
+Consistente naamgeving: `<Host> — <Service>` voor infrastructuur, `<Naam> — <domein>` voor webapps.
+
+| ID | Naam | Type |
+|----|------|------|
+| 1 | Grafana — metrics.workinglocal.be | HTTP (intern: grafana-metrics:3000) |
+| 2 | Home Assistant — ha.hostinglocal.be | HTTP |
+| 3 | AutoBA — autoba.hostinglocal.be | HTTP |
+| 4 | Vaultwarden — vault.hostinglocal.be | HTTP |
+| 5 | Odoo — odoo.workinglocal.be | HTTP |
+| 6 | VPS-WORKINGLOCAL — SSH | PORT :22 |
+| 7 | VPS-WORKINGLOCAL — Prometheus | PORT :9090 |
+| 8 | VPS-WORKINGLOCAL — node_exporter | PORT :9100 |
+| 9 | VM-AutoBA — node_exporter | PORT :9100 |
+| 10 | HAOS-NUC — Netdata | PORT :19999 |
+| 11 | Windows Server — windows_exporter | PORT :9182 |
