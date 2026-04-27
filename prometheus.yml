@@ -72,6 +72,27 @@ scrape_configs:
         labels:
           instance: 'AI-NODE-I5'
 
+  # MEDIASERVER (Proxmox host NUC i5-8259U, Tailscale 100.111.62.69)
+  - job_name: 'mediaserver'
+    static_configs:
+      - targets: ['100.111.62.69:9100']
+        labels:
+          instance: 'MEDIASERVER'
+
+  # VM-PLEX (Ubuntu 24.04, 192.168.111.50)
+  - job_name: 'vm-plex'
+    static_configs:
+      - targets: ['100.83.181.85:9100']
+        labels:
+          instance: 'VM-PLEX'
+
+  # VM-APPS (Hyper-V VM, Coolify+Vaultwarden, Tailscale 100.97.124.46)
+  - job_name: 'vm-apps'
+    static_configs:
+      - targets: ['100.97.124.46:9100']
+        labels:
+          instance: 'VM-APPS'
+
   # HAOS Intel NUC — via Netdata Prometheus export
   - job_name: 'haos-nuc'
     metrics_path: /api/v1/allmetrics
