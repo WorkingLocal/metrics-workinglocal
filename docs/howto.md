@@ -1,140 +1,117 @@
-# Hoe gebruik ik Netdata? — Working Local
+# Hoe gebruik ik de monitoring stack? — Working Local
 
-## Wat is dit?
+## Dashboards bekijken
 
-Netdata bewaakt de VPS en stuurt e-mailmeldingen als er iets misgaat — hoge CPU, weinig schijfruimte, containers die stoppen, enzovoort. Je kan ook live meekijken via de webinterface.
+**Grafana:** https://metrics.workinglocal.be
+- Login: `admin` / zie `.env` op VPS
+- Beschikbare dashboards: Node Exporter Full, Windows Exporter
+- Selecteer een host via de `instance` dropdown bovenaan
 
----
-
-## Hoe bekijk ik de live metrics?
-
-Ga naar **https://metrics.workinglocal.be**
-
-Je ziet real-time grafieken van:
-- CPU gebruik per core
-- RAM en swap gebruik
-- Schijfruimte en I/O
-- Netwerk verkeer
-- Alle Docker containers
+**Uptime Kuma:** https://uptime.workinglocal.be
+- Login: `admin` / zelfde wachtwoord als Grafana
+- Publieke status page: https://uptime.workinglocal.be/status/hosting-local
 
 ---
 
-## Hoe deploy ik Netdata op de VPS?
+## E-mailmeldingen
 
-### Stap 1 — Deployen via Coolify
+Alerts komen van `info@workinglocal.be` naar `thomas@workinglocal.be`.
 
-1. Ga naar **https://coolify.workinglocal.be**
-2. Klik **New Resource → Docker Compose**
-3. Plak de inhoud van `docker-compose.yml` uit deze repo
-4. Domein instellen: `https://metrics.workinglocal.be` → poort `19999`
-5. Klik **Deploy**
+**Subject formaat:**
+- `[WARNING] HighCpuUsage — VM-AUTOBA`
+- `[CRITICAL] InstanceDown — NUT-SERVER`
 
-### Stap 2 — DNS instellen
+Warnings herhalen elke **12 uur** zolang het probleem aanhoudt.
+Criticals herhalen elke **1 uur**.
 
-Voeg een A-record toe in Cloudflare:
-- **Type:** A
-- **Naam:** metrics
-- **Waarde:** VPS-IP
-- **Proxy:** UIT (grijs wolkje) — Netdata gebruikt WebSockets
+---
 
-### Stap 3 — Configuratie en e-mailmeldingen instellen
-
-Op je laptop, in de map van deze repo:
+## node_exporter installeren op een nieuwe Linux node
 
 ```bash
-bash deploy-config.sh 23.94.220.181 --smtp-password <jouw-smtp-wachtwoord>
+# SSH naar de node als root:
+curl -sL https://raw.githubusercontent.com/WorkingLocal/metrics-workinglocal/main/install-node-exporter.sh | bash
 ```
 
-Het SMTP-wachtwoord is het app-wachtwoord van het Hostinger e-mailaccount `info@workinglocal.be`.
+Daarna toevoegen in `prometheus.yml`:
 
-Na dit commando:
-- Worden alle alert-configuraties gekopieerd naar de VPS
-- Wordt het SMTP-wachtwoord veilig opgeslagen in het Docker volume
-- Wordt Netdata herstart
-
----
-
-## Hoe weet ik of e-mailmeldingen werken?
-
-Test de meldingen vanuit de container:
-
-```bash
-ssh root@23.94.220.181
-docker exec -it <netdata-container> bash
-/usr/libexec/netdata/plugins.d/alarm-notify.sh test
+```yaml
+- job_name: 'nieuwe-node'
+  static_configs:
+    - targets: ['<tailscale-ip>:9100']
+      labels:
+        instance: 'NIEUWE-NODE'
 ```
 
-Je ontvangt een test-e-mail op `thomas@workinglocal.be`.
-
-Of bekijk de logs:
+Deploy en herlaad:
 
 ```bash
-docker logs <netdata-container> 2>&1 | grep -i "alarm\|smtp\|msmtp" | tail -20
+scp prometheus.yml root@23.94.220.181:/data/coolify/services/metrics-stack/
+ssh root@23.94.220.181 'curl -s -X POST http://localhost:9090/-/reload'
 ```
 
 ---
 
-## Hoe pas ik drempelwaarden aan?
+## windows_exporter installeren op Windows
 
-De drempelwaarden staan in de bestanden in `netdata/health.d/`. Open het betreffende bestand en pas de waarden aan.
-
-Voorbeeld — CPU limiet verhogen naar 85%:
-
-```
-# netdata/health.d/cpu.conf
-warn: $this > 85    # was 75
-crit: $this > 95    # was 90
-```
-
-Daarna deployen:
-
-```bash
-bash deploy-config.sh 23.94.220.181
-```
-
-Zie [alerts.md](alerts.md) voor een overzicht van alle geconfigureerde alerts.
+1. Download MSI: https://github.com/prometheus-community/windows_exporter/releases
+2. Installeer: `msiexec /i windows_exporter-*.msi /quiet ENABLED_COLLECTORS=cpu,cs,logical_disk,net,os,service,system,memory`
+3. Poort 9182, bereikbaar via Tailscale
+4. Voeg toe aan `prometheus.yml` met poort 9182
 
 ---
 
-## Hoe wijzig ik het SMTP-wachtwoord?
+## Drempelwaarden aanpassen
+
+Bewerk `alert.rules.yml` in de repo en deploy:
 
 ```bash
-bash deploy-config.sh 23.94.220.181 --smtp-password <nieuw-wachtwoord>
+scp alert.rules.yml root@23.94.220.181:/data/coolify/services/metrics-stack/
+ssh root@23.94.220.181 'curl -s -X POST http://localhost:9090/-/reload'
 ```
 
-Het nieuwe wachtwoord wordt opgeslagen in het persistente Docker volume en blijft bewaard na herstart.
+Zie [alerts.md](alerts.md) voor een overzicht van alle regels.
 
 ---
 
-## Hoe voeg ik een nieuwe alert toe?
+## Alertmanager routing aanpassen
 
-1. Maak of bewerk een `.conf` bestand in `netdata/health.d/`
-2. Volg de Netdata alarm syntax:
-
-```
-alarm: mijn_alert_naam
-   on: system.cpu
- calc: $user + $system
- warn: $this > 80
- crit: $this > 95
- info: CPU gebruik te hoog
-   to: sysadmin
-```
-
-3. Deploy:
+Bewerk `alertmanager.yml` en herstart:
 
 ```bash
-bash deploy-config.sh 23.94.220.181
+scp alertmanager.yml root@23.94.220.181:/data/coolify/services/metrics-stack/
+ssh root@23.94.220.181 'docker restart alertmanager-metrics'
 ```
+
+Of gebruik het deploy script (werkt ook SMTP wachtwoord bij):
+
+```bash
+bash deploy-config.sh --smtp-password <wachtwoord>
+```
+
+---
+
+## SMTP wachtwoord bijwerken
+
+```bash
+bash deploy-config.sh --smtp-password <nieuw-wachtwoord>
+```
+
+---
+
+## Grafana dashboard importeren
+
+1. Ga naar Grafana → Dashboards → Import
+2. Voer een dashboard ID in (bv. `1860` voor Node Exporter Full)
+3. Selecteer datasource: `Prometheus`
 
 ---
 
 ## Problemen oplossen
 
 | Probleem | Oplossing |
-|---|---|
-| Dashboard niet bereikbaar | Controleer DNS: `dig metrics.workinglocal.be +short` |
-| Geen e-mailmeldingen | Test via `alarm-notify.sh test` en bekijk de logs |
-| SMTP fout | Controleer of msmtprc aanwezig is: `docker exec <container> cat /root/.msmtprc` |
-| Container start niet | `docker logs <netdata-container>` voor foutmeldingen |
-| Temperatuur niet zichtbaar | Niet beschikbaar op KVM VPS — alleen op bare metal hardware |
+|----------|-----------|
+| Host staat op "down" in Prometheus | `curl http://<tailscale-ip>:9100/metrics` — draait node_exporter? |
+| Geen e-mailmeldingen | `docker logs alertmanager-metrics` — SMTP fout? |
+| Grafana 504 fout | Grafana checkt intern via `http://grafana-metrics:3000/api/health` — Uptime Kuma mag niet de publieke URL gebruiken (hairpin NAT) |
+| Prometheus regels niet geladen | `curl -s http://localhost:9090/api/v1/rules` op VPS |

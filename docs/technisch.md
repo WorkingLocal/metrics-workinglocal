@@ -1,156 +1,111 @@
-# Technische documentatie — Netdata Monitoring Working Local
-
-## Concept
-
-Netdata werkt als gedistribueerd parent-child streaming systeem. De VPS fungeert als centrale parent node en ontvangt real-time metrics van alle child nodes in het homelab via Tailscale. Alerts en e-mailnotificaties worden verwerkt op de parent.
+# Technische documentatie — Metrics Stack
 
 ## Architectuur
 
 ```
-metrics.workinglocal.be (Traefik → VPS)
+Internet
     │
-    └── netdata parent (VPS 100.107.226.24:19999)
-         ├── System & Docker metrics VPS
-         ├── Health alerts + msmtp → thomas@workinglocal.be
-         └── Streaming child nodes (via Tailscale):
-              ├── WINDOWSSERVER2025 (100.92.201.100)
-              │     API key: 596b40bb-e0d2-4c83-81fa-ddf89d416cb9
-              ├── autoba (100.107.82.21)
-              │     API key: 24a2b782-a0be-4b27-82c9-00e7579425c6
-              └── ai-engine (100.80.180.55)
-                    API key: 413beb02-6549-49a4-8bf4-c3a1f1e0e418
+    └── Traefik (coolify-proxy, VPS 23.94.220.181)
+         ├── metrics.workinglocal.be → grafana-metrics:3000
+         └── uptime.workinglocal.be  → uptime-kuma-metrics:3001
+
+VPS (host network)
+    ├── prometheus-metrics :9090   — scrapet alle nodes via Tailscale
+    ├── alertmanager-metrics :9093 — e-mail routing
+    ├── node_exporter :9100        — VPS systeemmetrics
+    └── Docker bridge (metrics_monitoring)
+         ├── grafana-metrics
+         ├── alertmanager-metrics
+         └── uptime-kuma-metrics
+
+Tailscale nodes (geschraped door Prometheus)
+    ├── 100.92.201.100:9182   — WINDOWSSERVER2025 (windows_exporter)
+    ├── 100.107.82.21:9100    — VM-AutoBA (node_exporter Docker)
+    ├── 100.80.180.55:9100    — VM-AI-Engine (node_exporter systemd)
+    ├── 100.97.195.23:9100    — NUT-SERVER Pi (node_exporter systemd, arm64)
+    ├── 100.109.230.93:19999  — HAOS-NUC (Netdata /api/v1/allmetrics)
+    ├── 100.126.121.11:9100   — AI-NODE-I9 (node_exporter)
+    └── 100.78.175.49:9100    — AI-NODE-I5 (node_exporter)
 ```
 
-## Parent configuratie (VPS /etc/netdata/stream.conf)
+## Docker compose netwerken
 
-```ini
-[stream]
-    enabled = no  # parent ontvangt, verstuurt niet zelf
+| Container | Netwerken | Reden |
+|-----------|-----------|-------|
+| prometheus-metrics | host | Tailscale IPs bereiken |
+| grafana-metrics | monitoring + traefik (b5qxgv0vprkhgiioth9yk0fj) | Prometheus via host-gateway, Traefik routing |
+| alertmanager-metrics | monitoring | Intern bereikbaar voor Prometheus |
+| uptime-kuma-metrics | monitoring + traefik | Grafana intern bereiken, Traefik routing |
 
-[596b40bb-e0d2-4c83-81fa-ddf89d416cb9]
-    enabled = yes
-    allow from = 100.92.201.100  # Windows Server 2025
+**Belangrijk:** Grafana gebruikt `extra_hosts: host.docker.internal:host-gateway` om Prometheus op `localhost:9090` te bereiken.
 
-[24a2b782-a0be-4b27-82c9-00e7579425c6]
-    enabled = yes
-    allow from = 100.107.82.21   # VM-AutoBA
+## Prometheus configuratie
 
-[413beb02-6549-49a4-8bf4-c3a1f1e0e418]
-    enabled = yes
-    allow from = 100.80.180.55   # VM-AI-Engine
+- Config: `/data/coolify/services/metrics-stack/prometheus.yml`
+- Scrape interval: 15s
+- Data retentie: 30 dagen
+- Hot reload: `POST http://localhost:9090/-/reload`
+
+## Alertmanager configuratie
+
+- Config: `/data/coolify/services/metrics-stack/alertmanager.yml`
+- Geen hot reload — vereist `docker restart alertmanager-metrics`
+- Routing: warnings (12h repeat) vs critical (1h repeat)
+- Grouping: per `alertname + instance`
+
+## Alert regels
+
+Zie [alerts.md](alerts.md) voor de volledige tabel.
+
+Prometheus haalt regels op via `/data/coolify/services/metrics-stack/alert.rules.yml`.
+Hot reload via `POST /-/reload`.
+
+## Grafana
+
+- Image: `grafana/grafana:latest`
+- Data: Docker volume `metrics_grafana_data`
+- Provisioning: datasources + dashboard provider via bind mounts
+- SMTP: via `GF_SMTP_*` environment variabelen (uit `.env`)
+
+## Uptime Kuma
+
+- Image: `louislam/uptime-kuma:2` (v2.2.1)
+- Data: Docker volume `metrics_uptime_kuma_data`
+- Database: SQLite op `/app/data/kuma.db`
+- **Hairpin NAT:** Grafana-monitor checkt intern `http://grafana-metrics:3000/api/health` — publieke URL geeft intermittente 504 als check vanop dezelfde VPS loopt
+
+## VPS locatie
+
+```
+/data/coolify/services/metrics-stack/
+├── docker-compose.yml
+├── prometheus.yml
+├── alert.rules.yml
+├── alertmanager.yml
+├── .env                    # GRAFANA_ADMIN_PASSWORD + SMTP_PASSWORD
+└── grafana/
+    └── provisioning/
+        ├── datasources/prometheus.yml
+        └── dashboards/dashboards.yml
 ```
 
-> Na wijziging van stream.conf: `docker restart <netdata-container>` (SIGHUP volstaat niet).
+## Credentials
 
-## Child configuratie (elk child node /etc/netdata/stream.conf)
+| Service | Gebruiker | Wachtwoord |
+|---------|-----------|-----------|
+| Grafana | admin | zie `.env` GRAFANA_ADMIN_PASSWORD |
+| Uptime Kuma | admin | zelfde als Grafana |
+| Alertmanager SMTP | info@workinglocal.be | zie `.env` SMTP_PASSWORD |
 
-```ini
-[stream]
-    enabled = yes
-    destination = 100.107.226.24:19999
-    api key = <api-key-van-die-node>
-    timeout seconds = 60
-    buffer size bytes = 1048576
-    reconnect delay seconds = 5
-```
+## node_exporter installaties per node
 
-## Firewall (VPS iptables)
-
-Tailscale subnet toegang tot poort 19999 vereist een expliciete DOCKER-USER regel:
-
-```bash
-iptables -I DOCKER-USER 1 -s 100.64.0.0/10 -p tcp --dport 19999 -j RETURN
-```
-
-## docker-compose.yml
-
-```yaml
-services:
-  netdata:
-    image: netdata/netdata:latest
-    pid: host
-    cap_add: [SYS_PTRACE, SYS_ADMIN]
-    security_opt: [apparmor:unconfined]
-    volumes:
-      - netdataconfig:/etc/netdata      # configuratie (persistent)
-      - netdatalib:/var/lib/netdata     # opgeslagen data
-      - netdatacache:/var/cache/netdata
-      - /proc:/host/proc:ro             # systeem metrics
-      - /sys:/host/sys:ro
-      - /var/run/docker.sock:ro         # Docker metrics
-    entrypoint: >
-      sh -c "
-        if [ -f /etc/netdata/msmtprc ]; then
-          cp /etc/netdata/msmtprc /root/.msmtprc;
-        fi &&
-        exec /usr/sbin/netdata -D"
-```
-
-## Configuratiebestanden
-
-Alle config staat in de `netdata/` map van de repo en wordt uitgerold via `deploy-config.sh`.
-
-| Bestand | Inhoud |
-|---|---|
-| `netdata/netdata.conf` | Hostname, data retentie, health instellingen |
-| `netdata/health_alarm_notify.conf` | E-mail SMTP configuratie |
-| `netdata/health.d/cpu.conf` | CPU alerts |
-| `netdata/health.d/memory.conf` | RAM en swap alerts |
-| `netdata/health.d/disk.conf` | Schijfruimte en I/O alerts |
-| `netdata/health.d/network.conf` | Netwerk errors en drops |
-| `netdata/health.d/docker.conf` | Container status en geheugen |
-| `netdata/health.d/system.conf` | Load average, processen, uptime |
-
-## Health alerts
-
-| Categorie | Alert | Warn | Crit |
-|---|---|---|---|
-| CPU | `cpu_usage_warning` | >75% | >90% |
-| CPU | `cpu_iowait_warning` | >20% | >40% |
-| RAM | `ram_usage_warning` | >80% | >90% |
-| Swap | `swap_usage_warning` | >50% | >80% |
-| Disk | `disk_space_root_warning` | >75% | >90% |
-| Disk | `disk_utilization_warning` | >80% | >95% |
-| Netwerk | `net_errors_warning` | >10/s | >100/s |
-| Docker | `docker_container_running` | — | gestopt |
-| Docker | `docker_container_mem_warning` | >1.5 GB | >2 GB |
-| Systeem | `load_average_warning` | >6 | >12 |
-| Systeem | `reboot_required` | uptime <5m | — |
-
-## SMTP configuratie (msmtp)
-
-Netdata v2 gebruikt `msmtp` intern als sendmail-vervanging. De configuratie wordt persistent opgeslagen in het Docker volume zodat ze bewaard blijft na container restarts.
-
-| Instelling | Waarde |
-|---|---|
-| SMTP server | `smtp.hostinger.com` |
-| Poort | `587` (STARTTLS) |
-| Afzender | `info@workinglocal.be` |
-| Ontvanger | `thomas@workinglocal.be` |
-| Configuratiebestand | `/etc/netdata/msmtprc` (in volume) |
-
-**Persistentie-mechanisme:**
-1. `deploy-config.sh` schrijft `msmtprc` naar `/etc/netdata/msmtprc` (in het persistente volume)
-2. De container entrypoint kopieert dit bij elke start naar `/root/.msmtprc`
-3. Netdata roept `msmtp` aan als sendmail
-
-## Temperatuurmeting
-
-Op een KVM VPS zijn hardware temperatuursensoren niet beschikbaar — de hypervisor verbergt deze. Temperatuurmonitoring is enkel mogelijk op bare metal servers met IPMI toegang.
-
-## deploy-config.sh
-
-Het script voert volgende stappen uit op de VPS:
-1. Netdata container naam ophalen via `docker ps`
-2. Config volume pad ophalen via `docker inspect`
-3. Configuratiebestanden kopiëren via `scp`
-4. `msmtprc` aanmaken met SMTP wachtwoord
-5. Netdata container herstarten
-
-## Data retentie
-
-| Periode | Resolutie |
-|---|---|
-| 30 dagen | Per seconde |
-| 6 maanden | Per minuut |
-| 2 jaar | Per uur |
+| Node | Methode | Architectuur |
+|------|---------|-------------|
+| VPS-WORKINGLOCAL | systemd service | amd64 |
+| VM-AutoBA | Docker container (host network) | amd64 |
+| VM-AI-Engine | systemd service | amd64 |
+| NUT-SERVER Pi | systemd service | arm64 |
+| AI-NODE-I9 | systemd service | amd64 |
+| AI-NODE-I5 | systemd service | amd64 |
+| HAOS-NUC | Netdata add-on (Prometheus export) | amd64 |
+| Windows Server | windows_exporter MSI :9182 | amd64 |
