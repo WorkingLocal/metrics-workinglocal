@@ -28,14 +28,22 @@ Monitoring stack voor het volledige Hosting Local homelab.
 
 ## Gemonitorde nodes
 
-| Node | Methode | Status |
-|------|---------|--------|
-| VPS-WORKINGLOCAL | node_exporter (host) | actief |
-| Windows Server 2025 | windows_exporter :9182 | actief |
-| VM-AutoBA | node_exporter Docker :9100 | actief |
-| HAOS-NUC | Netdata Prometheus export :19999 | actief |
-| NUT-SERVER Pi | node_exporter :9100 | nog te installeren |
-| VM-AI-Engine | node_exporter :9100 | nog te installeren |
+| Node | Methode | Tailscale IP | Status |
+|------|---------|-------------|--------|
+| VPS-WORKINGLOCAL | node_exporter (host) | 100.107.226.24 | actief |
+| WINDOWSSERVER2025 | windows_exporter :9182 | 100.92.201.100 | actief |
+| NETWORKSERVER | node_exporter :9100 | 100.119.137.54 | actief |
+| MEDIASERVER | node_exporter :9100 | 100.111.62.69 | actief |
+| VM-AutoBA | node_exporter Docker :9100 | 100.107.82.21 | actief |
+| VM-AI-Engine | node_exporter :9100 | 100.80.180.55 | actief |
+| VM-ADGUARD | node_exporter :9100 | 100.121.177.76 | actief |
+| VM-PLEX | node_exporter :9100 | 100.83.181.85 | actief |
+| VM-IMMICH | node_exporter :9100 | 100.75.33.124 | actief |
+| VM-APPS | node_exporter :9100 | 100.97.124.46 | actief |
+| AI-NODE-I9 | node_exporter :9100 | 100.126.121.11 | actief |
+| AI-NODE-I5 | node_exporter :9100 | 100.78.175.49 | actief |
+| NUT-SERVER Pi | node_exporter :9100 | 100.97.195.23 | actief |
+| HAOS-NUC | Netdata Prometheus export :19999 | 100.109.230.93 | actief |
 
 ## Repository structuur
 

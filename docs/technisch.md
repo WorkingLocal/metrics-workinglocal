@@ -20,8 +20,14 @@ VPS (host network)
 
 Tailscale nodes (geschraped door Prometheus)
     ├── 100.92.201.100:9182   — WINDOWSSERVER2025 (windows_exporter)
+    ├── 100.119.137.54:9100   — NETWORKSERVER (node_exporter systemd)
+    ├── 100.111.62.69:9100    — MEDIASERVER (node_exporter systemd)
     ├── 100.107.82.21:9100    — VM-AutoBA (node_exporter Docker)
     ├── 100.80.180.55:9100    — VM-AI-Engine (node_exporter systemd)
+    ├── 100.121.177.76:9100   — VM-ADGUARD (node_exporter systemd)
+    ├── 100.83.181.85:9100    — VM-PLEX (node_exporter systemd)
+    ├── 100.75.33.124:9100    — VM-IMMICH (node_exporter systemd)
+    ├── 100.97.124.46:9100    — VM-APPS (node_exporter systemd)
     ├── 100.97.195.23:9100    — NUT-SERVER Pi (node_exporter systemd, arm64)
     ├── 100.109.230.93:19999  — HAOS-NUC (Netdata /api/v1/allmetrics)
     ├── 100.126.121.11:9100   — AI-NODE-I9 (node_exporter)
@@ -99,13 +105,19 @@ Hot reload via `POST /-/reload`.
 
 ## node_exporter installaties per node
 
-| Node | Methode | Architectuur |
-|------|---------|-------------|
-| VPS-WORKINGLOCAL | systemd service | amd64 |
-| VM-AutoBA | Docker container (host network) | amd64 |
-| VM-AI-Engine | systemd service | amd64 |
-| NUT-SERVER Pi | systemd service | arm64 |
-| AI-NODE-I9 | systemd service | amd64 |
-| AI-NODE-I5 | systemd service | amd64 |
-| HAOS-NUC | Netdata add-on (Prometheus export) | amd64 |
-| Windows Server | windows_exporter MSI :9182 | amd64 |
+| Node | Methode | Architectuur | Tailscale IP |
+|------|---------|-------------|-------------|
+| VPS-WORKINGLOCAL | systemd service | amd64 | 100.107.226.24 |
+| NETWORKSERVER | systemd service | amd64 | 100.119.137.54 |
+| MEDIASERVER | systemd service | amd64 | 100.111.62.69 |
+| VM-AutoBA | Docker container (host network) | amd64 | 100.107.82.21 |
+| VM-AI-Engine | systemd service | amd64 | 100.80.180.55 |
+| VM-ADGUARD | systemd service | amd64 | 100.121.177.76 |
+| VM-PLEX | systemd service | amd64 | 100.83.181.85 |
+| VM-IMMICH | systemd service | amd64 | 100.75.33.124 |
+| VM-APPS | systemd service | amd64 | 100.97.124.46 |
+| NUT-SERVER Pi | systemd service | arm64 | 100.97.195.23 |
+| AI-NODE-I9 | systemd service | amd64 | 100.126.121.11 |
+| AI-NODE-I5 | systemd service | amd64 | 100.78.175.49 |
+| HAOS-NUC | Netdata add-on (Prometheus export) | amd64 | 100.109.230.93 |
+| Windows Server | windows_exporter MSI :9182 | amd64 | 100.92.201.100 |
