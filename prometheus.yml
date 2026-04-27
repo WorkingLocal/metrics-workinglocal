@@ -65,12 +65,12 @@ scrape_configs:
         labels:
           instance: 'AI-NODE-I9'
 
-  # AI Node i5 (MS-01, bare metal — installatie in uitvoering)
-  # - job_name: 'ai-node-i5'
-  #   static_configs:
-  #     - targets: ['<tailscale-ip>:9100']
-  #       labels:
-  #         instance: 'AI-NODE-I5'
+  # AI Node i5 (MS-01, bare metal, Tailscale 100.78.175.49)
+  - job_name: 'ai-node-i5'
+    static_configs:
+      - targets: ['100.78.175.49:9100']
+        labels:
+          instance: 'AI-NODE-I5'
 
   # HAOS Intel NUC — via Netdata Prometheus export
   - job_name: 'haos-nuc'
