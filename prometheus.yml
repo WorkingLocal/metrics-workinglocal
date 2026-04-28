@@ -114,6 +114,13 @@ scrape_configs:
         labels:
           instance: 'VM-ADGUARD'
 
+  # VM-OPENCLAW (OpenClaw AI gateway, Tailscale 100.92.71.9)
+  - job_name: 'vm-openclaw'
+    static_configs:
+      - targets: ['100.92.71.9:9100']
+        labels:
+          instance: 'VM-OPENCLAW'
+
   # HAOS Intel NUC — via Netdata Prometheus export
   - job_name: 'haos-nuc'
     metrics_path: /api/v1/allmetrics
